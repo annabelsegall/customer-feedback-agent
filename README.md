@@ -142,6 +142,10 @@ Interactive API Documentation is available at `http://localhost:8000/docs`.
 
 ## 🧪 Demonstration & Use Case Walkthrough
 
+<video src="assets/demo.mp4" controls="controls" width="100%" style="max-height: 500px;">
+  Your browser does not support the video tag. [Watch Demo Video](assets/demo.mp4)
+</video>
+
 1. **Voice Note Submission**: Customer records a voice note on WhatsApp describing a bug.
 2. **Automated AI Extraction**: Gemini 3.6 Flash transcribes the audio, analyzes the technical root cause, and generates a structured GitHub issue with `High` priority.
 3. **Developer Action**: An engineer comments on the GitHub issue: *"Deploying patch to staging now."*
