@@ -2,7 +2,9 @@ import pytest
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine, Session, select
-from main import app, get_session, TicketMapping, ParsedIssue
+from main import app
+from database import get_session, TicketMapping
+from llm import ParsedIssue
 
 from sqlalchemy.pool import StaticPool
 
@@ -27,8 +29,8 @@ def setup_db():
     yield
     SQLModel.metadata.drop_all(test_engine)
 
-@patch("main.parse_feedback_with_llm")
-@patch("main.create_github_issue")
+@patch("routes.whatsapp.parse_feedback_with_llm")
+@patch("routes.whatsapp.create_github_issue")
 def test_inbound_whatsapp_webhook(mock_create_issue, mock_parse_llm):
     # Mock LLM response
     mock_parse_llm.return_value = ParsedIssue(
@@ -63,7 +65,7 @@ def test_inbound_whatsapp_webhook(mock_create_issue, mock_parse_llm):
         assert mapping.repo_name == "customer-feedback-agent-demo-repo"
         assert mapping.issue_title == "Button is not clickable on checkout page"
 
-@patch("main.send_whatsapp_notification")
+@patch("routes.github.send_whatsapp_notification")
 def test_github_webhook_assigned(mock_send_whatsapp):
     # Seed DB with ticket mapping
     with Session(test_engine) as session:
@@ -96,7 +98,7 @@ def test_github_webhook_assigned(mock_send_whatsapp):
     assert "alice_dev" in call_kwargs["message_text"]
     assert "Issue #101" in call_kwargs["message_text"]
 
-@patch("main.send_whatsapp_notification")
+@patch("routes.github.send_whatsapp_notification")
 def test_github_webhook_closed(mock_send_whatsapp):
     # Seed DB with ticket mapping
     with Session(test_engine) as session:
@@ -125,6 +127,41 @@ def test_github_webhook_closed(mock_send_whatsapp):
     call_kwargs = mock_send_whatsapp.call_args.kwargs
     assert call_kwargs["to_number"] == "whatsapp:+1234567890"
     assert "completed and resolved" in call_kwargs["message_text"]
+
+@patch("routes.github.send_whatsapp_notification")
+def test_github_webhook_comment(mock_send_whatsapp):
+    # Seed DB with ticket mapping
+    with Session(test_engine) as session:
+        mapping = TicketMapping(
+            whatsapp_number="whatsapp:+1234567890",
+            github_issue_id=303,
+            repo_name="customer-feedback-agent-demo-repo",
+            issue_title="Login failure"
+        )
+        session.add(mapping)
+        session.commit()
+
+    mock_send_whatsapp.return_value = True
+
+    payload = {
+        "action": "created",
+        "issue": {"number": 303},
+        "repository": {"name": "customer-feedback-agent-demo-repo"},
+        "comment": {
+            "body": "We are deploying a fix now.",
+            "user": {"login": "bob_dev"}
+        }
+    }
+
+    response = client.post("/webhook/github", json=payload)
+    assert response.status_code == 200
+    assert response.json() == {"status": "processed", "action": "created"}
+
+    mock_send_whatsapp.assert_called_once()
+    call_kwargs = mock_send_whatsapp.call_args.kwargs
+    assert call_kwargs["to_number"] == "whatsapp:+1234567890"
+    assert "bob_dev" in call_kwargs["message_text"]
+    assert "deploying a fix" in call_kwargs["message_text"]
 
 def test_github_webhook_untracked():
     payload = {
