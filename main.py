@@ -1,4 +1,5 @@
 import os
+import httpx
 from typing import Optional, Generator
 from fastapi import FastAPI, Request, Response, Form, Depends
 from sqlmodel import Field, SQLModel, Session, create_engine, select
@@ -66,20 +67,25 @@ class ParsedIssue(BaseModel):
     description: str
     priority: str
 
-def parse_feedback_with_llm(user_message: str) -> ParsedIssue:
+def parse_feedback_with_llm(
+    user_message: Optional[str] = "",
+    audio_bytes: Optional[bytes] = None,
+    audio_mime_type: Optional[str] = None
+) -> ParsedIssue:
     gemini_client = get_gemini_client()
+    msg_text = user_message or ""
     if not gemini_client:
         # Fallback default if API key is not configured
         return ParsedIssue(
             selected_repo=list(AVAILABLE_REPOS.keys())[0],
-            title=user_message[:50],
-            description=user_message,
+            title=msg_text[:50] or "Voice Note Feedback",
+            description=msg_text or "Feedback submitted via voice note.",
             priority="Medium"
         )
     
     prompt = f"""
     You are an expert Solutions Engineer routing customer feedback to engineering teams.
-    Analyze the incoming message and select the most appropriate target repository from this list:
+    Analyze the incoming customer message (which may include a voice note audio recording and/or text) and select the most appropriate target repository from this list:
     {AVAILABLE_REPOS}
 
     Respond ONLY with a JSON object matching this structure:
@@ -90,12 +96,20 @@ def parse_feedback_with_llm(user_message: str) -> ParsedIssue:
         "priority": "High" or "Medium" or "Low"
     }}
 
-    User Message: "{user_message}"
+    User Message Text: "{msg_text}"
     """
+    
+    contents = []
+    if audio_bytes:
+        mime = audio_mime_type or "audio/ogg"
+        audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime)
+        contents.append(audio_part)
+    
+    contents.append(prompt)
     
     response = gemini_client.models.generate_content(
         model="gemini-3.6-flash",
-        contents=prompt,
+        contents=contents,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
         ),
@@ -105,13 +119,33 @@ def parse_feedback_with_llm(user_message: str) -> ParsedIssue:
 @app.post("/webhook/whatsapp")
 async def inbound_whatsapp(
     From: str = Form(...),
-    Body: str = Form(...),
+    Body: Optional[str] = Form(""),
+    MediaUrl0: Optional[str] = Form(None),
+    MediaContentType0: Optional[str] = Form(None),
+    NumMedia: Optional[str] = Form("0"),
     session: Session = Depends(get_session)
 ):
     user_number = From
-    user_message = Body
+    user_message = Body or ""
 
-    parsed = parse_feedback_with_llm(user_message)
+    audio_bytes = None
+    if MediaUrl0:
+        try:
+            auth = None
+            if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
+                auth = (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+            async with httpx.AsyncClient() as client:
+                res = await client.get(MediaUrl0, auth=auth, follow_redirects=True)
+                if res.status_code == 200:
+                    audio_bytes = res.content
+        except Exception as e:
+            print(f"Error fetching Twilio media attachment: {e}")
+
+    parsed = parse_feedback_with_llm(
+        user_message=user_message,
+        audio_bytes=audio_bytes,
+        audio_mime_type=MediaContentType0
+    )
     target_repo_name = (
         parsed.selected_repo
         if parsed.selected_repo in AVAILABLE_REPOS
