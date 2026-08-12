@@ -19,13 +19,9 @@ The **WhatsApp to GitHub Issues AI Bridge** automates this entire lifecycle end-
 
 ## 🧪 Product Demonstration & Use Case Walkthrough
 
-![WhatsApp to GitHub Issues AI Bridge Demo](https://raw.githubusercontent.com/annabelsegall/customer-feedback-agent/main/assets/demo.mp4)
 
-<video src="https://raw.githubusercontent.com/annabelsegall/customer-feedback-agent/main/assets/demo.mp4" controls="controls" width="100%">
-  Your browser does not support video tag. <a href="assets/demo.mp4">Click here to watch demo.mp4</a>
-</video>
+https://github.com/user-attachments/assets/ee915bf3-0c70-4491-87c9-9a15ba0f71af
 
-> 🎥 **[▶️ Click to Watch / Open Demo Video (`assets/demo.mp4`)](assets/demo.mp4)**
 
 1. **Voice Note Submission**: Customer records a voice note on WhatsApp describing a bug.
 2. **Automated AI Extraction**: Gemini 3.6 Flash transcribes the audio, analyzes the technical root cause, and generates a structured GitHub issue with `High` priority.
