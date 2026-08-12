@@ -10,8 +10,16 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_ORG_OR_USER = os.getenv("GITHUB_ORG_OR_USER")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-AVAILABLE_REPOS = {
-    "frontend-app": "UI components, dashboards, web pages, visual layout bugs.",
-    "backend-api": "Database queries, payment processing, authentication, server 500 errors.",
-    "mobile-app": "iOS and Android apps, push notifications, mobile UI issues."
-}
+import json
+
+# Parse AVAILABLE_REPOS from environment variable or fallback to default single repo
+raw_repos = os.getenv("AVAILABLE_REPOS", "customer-feedback-agent-demo-repo")
+
+if raw_repos.startswith("{"):
+    try:
+        AVAILABLE_REPOS = json.loads(raw_repos)
+    except Exception:
+        AVAILABLE_REPOS = {"customer-feedback-agent-demo-repo": "General repository for feedback, feature requests, and bug reports."}
+else:
+    repo_list = [r.strip() for r in raw_repos.split(",") if r.strip()]
+    AVAILABLE_REPOS = {repo: "General repository for feedback, feature requests, and bug reports." for repo in repo_list}

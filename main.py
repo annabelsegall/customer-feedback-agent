@@ -36,8 +36,6 @@ def get_session() -> Generator[Session, None, None]:
     with Session(engine) as session:
         yield session
 
-app = FastAPI(title="WhatsApp <-> GitHub Issue Bridge")
-
 def get_twilio_client() -> Optional[Client]:
     if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
         return Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
@@ -53,9 +51,14 @@ def get_gemini_client() -> Optional[genai.Client]:
         return genai.Client(api_key=GEMINI_API_KEY)
     return None
 
-@app.on_event("startup")
-def on_startup():
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     create_db_and_tables()
+    yield
+
+app = FastAPI(title="WhatsApp <-> GitHub Issue Bridge", lifespan=lifespan)
 
 class ParsedIssue(BaseModel):
     selected_repo: str
@@ -79,6 +82,14 @@ def parse_feedback_with_llm(user_message: str) -> ParsedIssue:
     Analyze the incoming message and select the most appropriate target repository from this list:
     {AVAILABLE_REPOS}
 
+    Respond ONLY with a JSON object matching this structure:
+    {{
+        "selected_repo": "repository_name",
+        "title": "Short title summary of issue",
+        "description": "Detailed description of user feedback",
+        "priority": "High" or "Medium" or "Low"
+    }}
+
     User Message: "{user_message}"
     """
     
@@ -87,7 +98,6 @@ def parse_feedback_with_llm(user_message: str) -> ParsedIssue:
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
-            response_schema=ParsedIssue,
         ),
     )
     return ParsedIssue.model_validate_json(response.text)
@@ -108,7 +118,11 @@ async def inbound_whatsapp(
         else list(AVAILABLE_REPOS.keys())[0]
     )
 
-    full_repo_path = f"{GITHUB_ORG_OR_USER}/{target_repo_name}"
+    if "/" in target_repo_name:
+        full_repo_path = target_repo_name
+    else:
+        full_repo_path = f"{GITHUB_ORG_OR_USER}/{target_repo_name}" if GITHUB_ORG_OR_USER else target_repo_name
+
     gh_client = get_github_client()
     
     issue_number = 1
@@ -117,7 +131,7 @@ async def inbound_whatsapp(
             repo = gh_client.get_repo(full_repo_path)
             issue_body = (
                 f"{parsed.description}\n\n---\n"
-                f"**Submitted via WhatsApp by:** {user_number}\n"
+                f"**Submitted via:** WhatsApp\n"
                 f"**Priority:** {parsed.priority}"
             )
             
@@ -199,10 +213,14 @@ async def github_webhook(
     if notification_text:
         twilio_client = get_twilio_client()
         if twilio_client:
-            twilio_client.messages.create(
-                from_=TWILIO_WHATSAPP_NUMBER,
-                body=notification_text,
-                to=mapping.whatsapp_number
-            )
+            try:
+                twilio_client.messages.create(
+                    from_=TWILIO_WHATSAPP_NUMBER,
+                    body=notification_text,
+                    to=mapping.whatsapp_number
+                )
+            except Exception as e:
+                print(f"Error sending Twilio WhatsApp notification: {e}")
+                return {"status": "processed", "warning": f"Twilio notification failed: {e}"}
 
     return {"status": "processed", "action": action}

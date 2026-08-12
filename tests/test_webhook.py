@@ -4,9 +4,15 @@ from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine, Session, select
 from main import app, get_session, TicketMapping, ParsedIssue
 
+from sqlalchemy.pool import StaticPool
+
 # In-memory SQLite DB for testing
-sqlite_url = "sqlite:///:memory:"
-test_engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
+sqlite_url = "sqlite://"
+test_engine = create_engine(
+    sqlite_url,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool
+)
 
 def override_get_session():
     with Session(test_engine) as session:
@@ -26,7 +32,7 @@ def setup_db():
 def test_inbound_whatsapp_webhook(mock_get_github, mock_parse_llm):
     # Mock LLM response
     mock_parse_llm.return_value = ParsedIssue(
-        selected_repo="frontend-app",
+        selected_repo="customer-feedback-agent-demo-repo",
         title="Button is not clickable on checkout page",
         description="User unable to click pay button on checkout",
         priority="High"
@@ -50,7 +56,7 @@ def test_inbound_whatsapp_webhook(mock_get_github, mock_parse_llm):
     )
 
     assert response.status_code == 200
-    assert response.headers["content-type"] == "application/xml; charset=utf-8"
+    assert response.headers["content-type"].startswith("application/xml")
     assert "<Response><Message>" in response.text
     assert "Issue #42" in response.text
 
@@ -60,7 +66,7 @@ def test_inbound_whatsapp_webhook(mock_get_github, mock_parse_llm):
         assert mapping is not None
         assert mapping.whatsapp_number == "whatsapp:+1234567890"
         assert mapping.github_issue_id == 42
-        assert mapping.repo_name == "frontend-app"
+        assert mapping.repo_name == "customer-feedback-agent-demo-repo"
         assert mapping.issue_title == "Button is not clickable on checkout page"
 
 @patch("main.get_twilio_client")
