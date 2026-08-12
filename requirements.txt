@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+twilio
+pygithub
+google-genai
+pydantic
+sqlmodel
+python-dotenv
+pytest
+httpx
