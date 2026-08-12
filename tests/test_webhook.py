@@ -28,8 +28,8 @@ def setup_db():
     SQLModel.metadata.drop_all(test_engine)
 
 @patch("main.parse_feedback_with_llm")
-@patch("main.get_github_client")
-def test_inbound_whatsapp_webhook(mock_get_github, mock_parse_llm):
+@patch("main.create_github_issue")
+def test_inbound_whatsapp_webhook(mock_create_issue, mock_parse_llm):
     # Mock LLM response
     mock_parse_llm.return_value = ParsedIssue(
         selected_repo="customer-feedback-agent-demo-repo",
@@ -38,14 +38,8 @@ def test_inbound_whatsapp_webhook(mock_get_github, mock_parse_llm):
         priority="High"
     )
 
-    # Mock GitHub Client & Issue creation
-    mock_gh = MagicMock()
-    mock_repo = MagicMock()
-    mock_issue = MagicMock()
-    mock_issue.number = 42
-    mock_repo.create_issue.return_value = mock_issue
-    mock_gh.get_repo.return_value = mock_repo
-    mock_get_github.return_value = mock_gh
+    # Mock GitHub issue creation returning issue number 42
+    mock_create_issue.return_value = 42
 
     response = client.post(
         "/webhook/whatsapp",
@@ -69,8 +63,8 @@ def test_inbound_whatsapp_webhook(mock_get_github, mock_parse_llm):
         assert mapping.repo_name == "customer-feedback-agent-demo-repo"
         assert mapping.issue_title == "Button is not clickable on checkout page"
 
-@patch("main.get_twilio_client")
-def test_github_webhook_assigned(mock_get_twilio):
+@patch("main.send_whatsapp_notification")
+def test_github_webhook_assigned(mock_send_whatsapp):
     # Seed DB with ticket mapping
     with Session(test_engine) as session:
         mapping = TicketMapping(
@@ -82,8 +76,7 @@ def test_github_webhook_assigned(mock_get_twilio):
         session.add(mapping)
         session.commit()
 
-    mock_twilio = MagicMock()
-    mock_get_twilio.return_value = mock_twilio
+    mock_send_whatsapp.return_value = True
 
     payload = {
         "action": "assigned",
@@ -96,15 +89,15 @@ def test_github_webhook_assigned(mock_get_twilio):
     assert response.status_code == 200
     assert response.json() == {"status": "processed", "action": "assigned"}
 
-    # Verify Twilio notification was triggered
-    mock_twilio.messages.create.assert_called_once()
-    call_kwargs = mock_twilio.messages.create.call_args.kwargs
-    assert call_kwargs["to"] == "whatsapp:+1234567890"
-    assert "alice_dev" in call_kwargs["body"]
-    assert "Issue #101" in call_kwargs["body"]
+    # Verify Twilio notification helper was called
+    mock_send_whatsapp.assert_called_once()
+    call_kwargs = mock_send_whatsapp.call_args.kwargs
+    assert call_kwargs["to_number"] == "whatsapp:+1234567890"
+    assert "alice_dev" in call_kwargs["message_text"]
+    assert "Issue #101" in call_kwargs["message_text"]
 
-@patch("main.get_twilio_client")
-def test_github_webhook_closed(mock_get_twilio):
+@patch("main.send_whatsapp_notification")
+def test_github_webhook_closed(mock_send_whatsapp):
     # Seed DB with ticket mapping
     with Session(test_engine) as session:
         mapping = TicketMapping(
@@ -116,8 +109,7 @@ def test_github_webhook_closed(mock_get_twilio):
         session.add(mapping)
         session.commit()
 
-    mock_twilio = MagicMock()
-    mock_get_twilio.return_value = mock_twilio
+    mock_send_whatsapp.return_value = True
 
     payload = {
         "action": "closed",
@@ -129,10 +121,10 @@ def test_github_webhook_closed(mock_get_twilio):
     assert response.status_code == 200
     assert response.json() == {"status": "processed", "action": "closed"}
 
-    mock_twilio.messages.create.assert_called_once()
-    call_kwargs = mock_twilio.messages.create.call_args.kwargs
-    assert call_kwargs["to"] == "whatsapp:+1234567890"
-    assert "completed and resolved" in call_kwargs["body"]
+    mock_send_whatsapp.assert_called_once()
+    call_kwargs = mock_send_whatsapp.call_args.kwargs
+    assert call_kwargs["to_number"] == "whatsapp:+1234567890"
+    assert "completed and resolved" in call_kwargs["message_text"]
 
 def test_github_webhook_untracked():
     payload = {
