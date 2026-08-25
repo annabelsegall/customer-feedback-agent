@@ -1,4 +1,4 @@
-# 🤖 WhatsApp to GitHub Issues AI Bridge
+# 🤖 AI Customer Success Whatsapp Agent
 
 > **An event-driven, multimodal AI agent bridge that converts customer WhatsApp messages and voice notes into structured GitHub Issues, providing real-time, bidirectional progress notifications back to customers.**
 
